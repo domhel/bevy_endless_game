@@ -419,25 +419,36 @@ fn gate_passed(
 // checks if the player leaves the view
 fn player_check_leave_view(
     mut query_set: QuerySet<(
-        Query<(&Transform, With<OrthographicProjection>)>,
-        Query<(&Transform, With<Player>)>,
+        Query<&Transform, With<OrthographicProjection>>,
+        Query<(&mut Transform, &mut Velocity, &Sprite), With<Player>>,
     )>,
     window_size: Res<WindowSize>,
     mut player_lost_event: EventWriter<PlayerLostEvent>,
 ) {
     let mut camera_y = 0.0;
-    if let Ok((camera_tf, _)) = query_set.q0_mut().single_mut() {
+    if let Ok(camera_tf) = query_set.q0_mut().single_mut() {
         camera_y = camera_tf.translation.y;
     }
-    let mut player_y = 0.0;
-    if let Ok((player_tf, _)) = query_set.q1_mut().single_mut() {
-        player_y = player_tf.translation.y;
-    }
-
-    // TODO: actually lose the game
-    if player_y < camera_y - window_size.height / 2.0 {
-        // println!("Player lost!");
-        player_lost_event.send(PlayerLostEvent.into());
+    if let Ok((mut tf, mut velocity, sprite)) = query_set.q1_mut().single_mut() {
+        if tf.translation.x - sprite.size.x/2.0 < -window_size.width/2.0 {
+            velocity.0.x = 0.0;
+            velocity.0.y = 0.0;
+            tf.translation.x = -window_size.width/2.0 + sprite.size.x/2.0;
+        }
+        else if tf.translation.x + sprite.size.x/2.0 > window_size.width/2.0 {
+            velocity.0.x = 0.0;
+            velocity.0.y = 0.0;
+            tf.translation.x = window_size.width/2.0 - sprite.size.x/2.0;
+        }
+        if tf.translation.y - sprite.size.y/2.0 < camera_y - window_size.height / 2.0 {
+            // println!("Player lost!");
+            player_lost_event.send(PlayerLostEvent.into());
+        }
+        else if tf.translation.y + sprite.size.y/2.0 > camera_y + window_size.height / 2.0 {
+            velocity.0.x = 0.0;
+            velocity.0.y = 0.0;
+            tf.translation.y = camera_y + window_size.height/2.0 - sprite.size.x/2.0;
+        }
     }
 }
 
@@ -690,30 +701,34 @@ fn gesture_on_player(
     if let Ok((tf, _)) = query_set.q1_mut().single_mut() {
         camera_y = tf.translation.y;
     }
+    let mut is_left_pressed = false;
     let mut player_pos_real = Vec3::ZERO;
     if let Ok((tf, _sprite, mut vel, _)) = query_set.q0_mut().single_mut() {
         let mut player_pos = tf.translation.clone();
         player_pos_real = tf.translation.clone();
         player_pos.y -= camera_y;
-        if mouse_buttons.just_pressed(MouseButton::Left) {
-            if let Some(_pos) = window.cursor_position() {
-                drag_gesture.start_pos = _pos;
-                drag_gesture.is_dragging = true;
-            }
+        is_left_pressed = mouse_buttons.pressed(MouseButton::Left);
+        if is_left_pressed {
+            if !drag_gesture.is_dragging {
+                if let Some(_pos) = window.cursor_position() {
+                    drag_gesture.start_pos = _pos;
+                    drag_gesture.is_dragging = true;
+                }
 
-            // spawn line
-            commands
-                .spawn_bundle(SpriteBundle {
-                    sprite: Sprite::new(Vec2::new(3.0, 0.0)),
-                    material: materials
-                        .add(Color::rgba_u8(0xD1, 0xD5, 0xDB, 0x80).into())
-                        .clone(),
-                    transform: Transform::from_xyz(0.0, 0.0, 1.0),
-                    ..Default::default()
-                })
-                .insert(GestureLine);
+                // spawn line
+                commands
+                    .spawn_bundle(SpriteBundle {
+                        sprite: Sprite::new(Vec2::new(3.0, 0.0)),
+                        material: materials
+                            .add(Color::rgba_u8(0xD1, 0xD5, 0xDB, 0x80).into())
+                            .clone(),
+                        transform: Transform::from_xyz(0.0, 0.0, 1.0),
+                        ..Default::default()
+                    })
+                    .insert(GestureLine);
+            }
         }
-        if mouse_buttons.just_released(MouseButton::Left) {
+        if !mouse_buttons.pressed(MouseButton::Left) {
             if drag_gesture.is_dragging {
                 drag_gesture.is_dragging = false;
                 if let Some(_pos) = window.cursor_position() {
@@ -731,7 +746,7 @@ fn gesture_on_player(
     }
 
     // draw line
-    if mouse_buttons.pressed(MouseButton::Left) {
+    if is_left_pressed {
         for (_, mut tf, mut sprite) in query_set.q2_mut().iter_mut() {
             if let Some(mouse_pos) = window.cursor_position() {
                 let diff = mouse_pos - drag_gesture.start_pos;
