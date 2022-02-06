@@ -1,3 +1,5 @@
+![Endless Game Screenshot](screenshot_endless_game.png)
+
 ## Description
 This is a small endless game written in Rust with the bevy game engine 0.5.
 
